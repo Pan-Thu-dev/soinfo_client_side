@@ -1,22 +1,30 @@
 import { useState } from 'react';
-import discordApi, { DiscordProfileResponse } from '../api/discord';
+import discordApi from '../api/discord';
+
+// Import the type from our API module
+import type { DiscordActivity } from '../api/discord';
+
+/**
+ * Profile data type definition
+ */
+export interface DiscordProfile {
+  username: string;
+  displayName: string;
+  avatarUrl: string | null;
+  status: string;
+  activity: DiscordActivity | null;
+  timestamp: number; // Added for caching purposes
+}
 
 /**
  * Hook return type definition
  */
 interface UseDiscordProfileResult {
-  profile: DiscordProfileResponse | null;
+  profile: DiscordProfile | null;
   loading: boolean;
   error: string | null;
   fetchProfile: (username: string) => Promise<void>;
   refreshProfile: () => Promise<void>;
-}
-
-/**
- * Extended profile type with cache timestamp
- */
-interface CachedProfile extends DiscordProfileResponse {
-  timestamp: number;
 }
 
 /**
@@ -29,8 +37,8 @@ interface HistoryItem {
   timestamp: number;
 }
 
-// Cache expiration time (1 hour in milliseconds)
-const CACHE_EXPIRATION = 60 * 60 * 1000;
+// Cache expiration time (5 minutes in milliseconds)
+const CACHE_EXPIRATION = 5 * 60 * 1000;
 
 // Maximum number of history items to store
 const MAX_HISTORY_ITEMS = 10;
@@ -45,7 +53,7 @@ const STORAGE_KEYS = {
  * Custom hook for fetching and caching Discord profile data
  */
 export function useDiscordProfile(): UseDiscordProfileResult {
-  const [profile, setProfile] = useState<DiscordProfileResponse | null>(null);
+  const [profile, setProfile] = useState<DiscordProfile | null>(null);
   const [currentUsername, setCurrentUsername] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
@@ -53,19 +61,19 @@ export function useDiscordProfile(): UseDiscordProfileResult {
   /**
    * Add profile to search history
    */
-  const addToHistory = (username: string, profileData: DiscordProfileResponse): void => {
+  const addToHistory = (username: string, profileData: DiscordProfile): void => {
     try {
       // Get existing history
       const historyString = localStorage.getItem(STORAGE_KEYS.history);
       const history: HistoryItem[] = historyString ? JSON.parse(historyString) : [];
       
       // Check if username already exists
-      const existingIndex = history.findIndex(item => item.username === username);
+      const existingIndex = history.findIndex(item => item.username.toLowerCase() === username.toLowerCase());
       
       // Create new history item
       const historyItem: HistoryItem = {
         username,
-        displayName: profileData.username,
+        displayName: profileData.displayName || profileData.username,
         avatarUrl: profileData.avatarUrl,
         timestamp: Date.now()
       };
@@ -89,13 +97,13 @@ export function useDiscordProfile(): UseDiscordProfileResult {
   /**
    * Check cache for profile data
    */
-  const checkCache = (username: string): CachedProfile | null => {
+  const checkCache = (username: string): DiscordProfile | null => {
     try {
-      const cacheKey = `${STORAGE_KEYS.cachePrefix}${username}`;
+      const cacheKey = `${STORAGE_KEYS.cachePrefix}${username.toLowerCase()}`;
       const cacheString = localStorage.getItem(cacheKey);
       if (!cacheString) return null;
       
-      const cachedData = JSON.parse(cacheString) as CachedProfile;
+      const cachedData = JSON.parse(cacheString) as DiscordProfile;
       const now = Date.now();
       
       // Check if cache is expired
@@ -114,15 +122,10 @@ export function useDiscordProfile(): UseDiscordProfileResult {
   /**
    * Save profile data to cache
    */
-  const saveToCache = (username: string, profileData: DiscordProfileResponse): void => {
+  const saveToCache = (username: string, profileData: DiscordProfile): void => {
     try {
-      const cacheData: CachedProfile = {
-        ...profileData,
-        timestamp: Date.now()
-      };
-      
-      const cacheKey = `${STORAGE_KEYS.cachePrefix}${username}`;
-      localStorage.setItem(cacheKey, JSON.stringify(cacheData));
+      const cacheKey = `${STORAGE_KEYS.cachePrefix}${username.toLowerCase()}`;
+      localStorage.setItem(cacheKey, JSON.stringify(profileData));
     } catch (err) {
       console.error('Failed to save to cache:', err);
     }
@@ -148,19 +151,28 @@ export function useDiscordProfile(): UseDiscordProfileResult {
       const cachedProfile = checkCache(username);
       
       if (cachedProfile) {
+        console.log('Using cached profile for', username);
         setProfile(cachedProfile);
         setLoading(false);
         return;
       }
       
       // Fetch from API if not in cache
+      console.log('Fetching profile from API for', username);
       const data = await discordApi.fetchProfile(username);
       
+      // Add timestamp for cache expiration
+      const profileWithTimestamp: DiscordProfile = {
+        ...data,
+        timestamp: Date.now()
+      };
+      
       // Update state and storage
-      saveToCache(username, data);
-      addToHistory(username, data);
-      setProfile(data);
+      saveToCache(username, profileWithTimestamp);
+      addToHistory(username, profileWithTimestamp);
+      setProfile(profileWithTimestamp);
     } catch (err) {
+      console.error('Error fetching profile:', err);
       setError(err instanceof Error ? err.message : 'An unknown error occurred');
     } finally {
       setLoading(false);
@@ -181,13 +193,21 @@ export function useDiscordProfile(): UseDiscordProfileResult {
     
     try {
       // Force fetch from API
+      console.log('Refreshing profile from API for', currentUsername);
       const data = await discordApi.fetchProfile(currentUsername);
       
+      // Add timestamp for cache expiration
+      const profileWithTimestamp: DiscordProfile = {
+        ...data,
+        timestamp: Date.now()
+      };
+      
       // Update state and storage
-      saveToCache(currentUsername, data);
-      addToHistory(currentUsername, data);
-      setProfile(data);
+      saveToCache(currentUsername, profileWithTimestamp);
+      addToHistory(currentUsername, profileWithTimestamp);
+      setProfile(profileWithTimestamp);
     } catch (err) {
+      console.error('Error refreshing profile:', err);
       setError(err instanceof Error ? err.message : 'An unknown error occurred');
     } finally {
       setLoading(false);
