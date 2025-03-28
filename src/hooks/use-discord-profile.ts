@@ -1,70 +1,98 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import discordApi, { DiscordProfileResponse } from '../api/discord';
 
+/**
+ * Hook return type definition
+ */
 interface UseDiscordProfileResult {
   profile: DiscordProfileResponse | null;
   loading: boolean;
   error: string | null;
-  fetchProfile: (profileUrl: string) => Promise<void>;
+  fetchProfile: (username: string) => Promise<void>;
   refreshProfile: () => Promise<void>;
 }
 
+/**
+ * Extended profile type with cache timestamp
+ */
 interface CachedProfile extends DiscordProfileResponse {
+  timestamp: number;
+}
+
+/**
+ * History item definition
+ */
+interface HistoryItem {
+  username: string;
+  displayName: string;
+  avatarUrl: string | null;
   timestamp: number;
 }
 
 // Cache expiration time (1 hour in milliseconds)
 const CACHE_EXPIRATION = 60 * 60 * 1000;
 
+// Maximum number of history items to store
+const MAX_HISTORY_ITEMS = 10;
+
+// LocalStorage keys
+const STORAGE_KEYS = {
+  history: 'discordSearchHistory',
+  cachePrefix: 'discord_profile_'
+};
+
 /**
  * Custom hook for fetching and caching Discord profile data
  */
 export function useDiscordProfile(): UseDiscordProfileResult {
   const [profile, setProfile] = useState<DiscordProfileResponse | null>(null);
-  const [currentUrl, setCurrentUrl] = useState<string>('');
+  const [currentUsername, setCurrentUsername] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Function to add profile to search history
-  const addToHistory = (url: string, profileData: DiscordProfileResponse) => {
+  /**
+   * Add profile to search history
+   */
+  const addToHistory = (username: string, profileData: DiscordProfileResponse): void => {
     try {
-      // Get existing history from localStorage
-      const historyString = localStorage.getItem('discordSearchHistory');
-      const history = historyString ? JSON.parse(historyString) : [];
+      // Get existing history
+      const historyString = localStorage.getItem(STORAGE_KEYS.history);
+      const history: HistoryItem[] = historyString ? JSON.parse(historyString) : [];
       
-      // Check if this URL already exists in history
-      const existingIndex = history.findIndex((item: { url: string }) => item.url === url);
+      // Check if username already exists
+      const existingIndex = history.findIndex(item => item.username === username);
       
       // Create new history item
-      const historyItem = {
-        url,
-        username: profileData.username,
+      const historyItem: HistoryItem = {
+        username,
+        displayName: profileData.username,
         avatarUrl: profileData.avatarUrl,
         timestamp: Date.now()
       };
       
-      // If URL exists, replace it; otherwise add new item
+      // Update history
       if (existingIndex !== -1) {
         history.splice(existingIndex, 1);
       }
       
-      // Add new item to the beginning of the array
+      // Add to beginning and limit size
       history.unshift(historyItem);
+      const limitedHistory = history.slice(0, MAX_HISTORY_ITEMS);
       
-      // Limit history to 10 items
-      const limitedHistory = history.slice(0, 10);
-      
-      // Store updated history
-      localStorage.setItem('discordSearchHistory', JSON.stringify(limitedHistory));
+      // Save to localStorage
+      localStorage.setItem(STORAGE_KEYS.history, JSON.stringify(limitedHistory));
     } catch (err) {
       console.error('Failed to save to search history:', err);
     }
   };
 
-  // Function to check cache for the profile
-  const checkCache = (url: string): CachedProfile | null => {
+  /**
+   * Check cache for profile data
+   */
+  const checkCache = (username: string): CachedProfile | null => {
     try {
-      const cacheString = localStorage.getItem(`discord_profile_${url}`);
+      const cacheKey = `${STORAGE_KEYS.cachePrefix}${username}`;
+      const cacheString = localStorage.getItem(cacheKey);
       if (!cacheString) return null;
       
       const cachedData = JSON.parse(cacheString) as CachedProfile;
@@ -72,8 +100,7 @@ export function useDiscordProfile(): UseDiscordProfileResult {
       
       // Check if cache is expired
       if (now - cachedData.timestamp > CACHE_EXPIRATION) {
-        // Remove expired cache
-        localStorage.removeItem(`discord_profile_${url}`);
+        localStorage.removeItem(cacheKey);
         return null;
       }
       
@@ -84,34 +111,41 @@ export function useDiscordProfile(): UseDiscordProfileResult {
     }
   };
 
-  // Function to save profile to cache
-  const saveToCache = (url: string, profileData: DiscordProfileResponse) => {
+  /**
+   * Save profile data to cache
+   */
+  const saveToCache = (username: string, profileData: DiscordProfileResponse): void => {
     try {
       const cacheData: CachedProfile = {
         ...profileData,
         timestamp: Date.now()
       };
       
-      localStorage.setItem(`discord_profile_${url}`, JSON.stringify(cacheData));
+      const cacheKey = `${STORAGE_KEYS.cachePrefix}${username}`;
+      localStorage.setItem(cacheKey, JSON.stringify(cacheData));
     } catch (err) {
       console.error('Failed to save to cache:', err);
     }
   };
 
-  // Function to fetch profile from API
-  const fetchProfile = async (profileUrl: string) => {
-    if (!profileUrl.trim()) {
-      setError('Please enter a Discord profile URL');
+  /**
+   * Fetch profile data for a username
+   */
+  const fetchProfile = async (username: string): Promise<void> => {
+    // Validate input
+    if (!username.trim()) {
+      setError('Please enter a Discord username');
       return;
     }
     
+    // Set loading state
     setLoading(true);
     setError(null);
-    setCurrentUrl(profileUrl);
+    setCurrentUsername(username);
     
     try {
-      // Check if profile is in cache
-      const cachedProfile = checkCache(profileUrl);
+      // Try to get from cache first
+      const cachedProfile = checkCache(username);
       
       if (cachedProfile) {
         setProfile(cachedProfile);
@@ -120,12 +154,11 @@ export function useDiscordProfile(): UseDiscordProfileResult {
       }
       
       // Fetch from API if not in cache
-      const data = await discordApi.fetchProfile(profileUrl);
+      const data = await discordApi.fetchProfile(username);
       
-      // Save to cache and history
-      saveToCache(profileUrl, data);
-      addToHistory(profileUrl, data);
-      
+      // Update state and storage
+      saveToCache(username, data);
+      addToHistory(username, data);
       setProfile(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An unknown error occurred');
@@ -134,9 +167,11 @@ export function useDiscordProfile(): UseDiscordProfileResult {
     }
   };
 
-  // Function to refresh current profile
-  const refreshProfile = async () => {
-    if (!currentUrl) {
+  /**
+   * Refresh current profile data
+   */
+  const refreshProfile = async (): Promise<void> => {
+    if (!currentUsername) {
       setError('No profile to refresh');
       return;
     }
@@ -146,12 +181,11 @@ export function useDiscordProfile(): UseDiscordProfileResult {
     
     try {
       // Force fetch from API
-      const data = await discordApi.fetchProfile(currentUrl);
+      const data = await discordApi.fetchProfile(currentUsername);
       
-      // Update cache and history
-      saveToCache(currentUrl, data);
-      addToHistory(currentUrl, data);
-      
+      // Update state and storage
+      saveToCache(currentUsername, data);
+      addToHistory(currentUsername, data);
       setProfile(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An unknown error occurred');
