@@ -1,58 +1,10 @@
 import axios, { AxiosError } from 'axios';
-
-// Define types for API requests and responses
-export interface DiscordProfileRequest {
-  username: string;
-}
-
-export interface DiscordActivity {
-  type: string;
-  name: string;
-}
-
-export interface DiscordProfileResponse {
-  status: string;
-  data: {
-    username: string;
-    displayName: string;
-    avatarUrl: string | null;
-    status: string;
-    activity: DiscordActivity | null;
-  };
-}
-
-export interface DiscordUserData {
-  id: string;
-  username: string;
-  displayName: string;
-  nickname: string | null;
-  guildName: string;
-  avatarUrl: string | null;
-}
-
-export interface DiscordUserListResponse {
-  status: string;
-  data: {
-    count: number;
-    users: DiscordUserData[];
-  };
-}
-
-export interface DiscordGuildData {
-  id: string;
-  name: string;
-  memberCount: number;
-  permissions?: string[];
-  error?: string;
-}
-
-export interface DiscordGuildListResponse {
-  status: string;
-  data: {
-    guildsCount: number;
-    guilds: DiscordGuildData[];
-  };
-}
+import { 
+  DiscordProfileRequest, 
+  DiscordProfileResponse, 
+  DiscordUserListResponse, 
+  DiscordGuildListResponse 
+} from '../types/discord-types';
 
 // API base URL - use environment variable or fallback to localhost
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api';
