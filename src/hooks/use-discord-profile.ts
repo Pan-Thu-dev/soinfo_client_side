@@ -37,16 +37,17 @@ interface HistoryItem {
   timestamp: number;
 }
 
-// Cache expiration time (5 minutes in milliseconds)
-const CACHE_EXPIRATION = 5 * 60 * 1000;
-
-// Maximum number of history items to store
-const MAX_HISTORY_ITEMS = 10;
-
-// LocalStorage keys
-const STORAGE_KEYS = {
-  history: 'discordSearchHistory',
-  cachePrefix: 'discord_profile_'
+// Cache constants
+const CACHE = {
+  // Cache expiration time (30 minutes in milliseconds)
+  EXPIRATION: 30 * 60 * 1000,
+  // Maximum number of history items to store
+  MAX_HISTORY_ITEMS: 10,
+  // LocalStorage keys
+  STORAGE_KEYS: {
+    history: 'discordSearchHistory',
+    cachePrefix: 'discord_profile_'
+  }
 };
 
 /**
@@ -64,7 +65,7 @@ export function useDiscordProfile(): UseDiscordProfileResult {
   const addToHistory = (username: string, profileData: DiscordProfile): void => {
     try {
       // Get existing history
-      const historyString = localStorage.getItem(STORAGE_KEYS.history);
+      const historyString = localStorage.getItem(CACHE.STORAGE_KEYS.history);
       const history: HistoryItem[] = historyString ? JSON.parse(historyString) : [];
       
       // Check if username already exists
@@ -85,10 +86,10 @@ export function useDiscordProfile(): UseDiscordProfileResult {
       
       // Add to beginning and limit size
       history.unshift(historyItem);
-      const limitedHistory = history.slice(0, MAX_HISTORY_ITEMS);
+      const limitedHistory = history.slice(0, CACHE.MAX_HISTORY_ITEMS);
       
       // Save to localStorage
-      localStorage.setItem(STORAGE_KEYS.history, JSON.stringify(limitedHistory));
+      localStorage.setItem(CACHE.STORAGE_KEYS.history, JSON.stringify(limitedHistory));
     } catch (err) {
       console.error('Failed to save to search history:', err);
     }
@@ -99,7 +100,7 @@ export function useDiscordProfile(): UseDiscordProfileResult {
    */
   const checkCache = (username: string): DiscordProfile | null => {
     try {
-      const cacheKey = `${STORAGE_KEYS.cachePrefix}${username.toLowerCase()}`;
+      const cacheKey = `${CACHE.STORAGE_KEYS.cachePrefix}${username.toLowerCase()}`;
       const cacheString = localStorage.getItem(cacheKey);
       if (!cacheString) return null;
       
@@ -107,7 +108,7 @@ export function useDiscordProfile(): UseDiscordProfileResult {
       const now = Date.now();
       
       // Check if cache is expired
-      if (now - cachedData.timestamp > CACHE_EXPIRATION) {
+      if (now - cachedData.timestamp > CACHE.EXPIRATION) {
         localStorage.removeItem(cacheKey);
         return null;
       }
@@ -124,7 +125,7 @@ export function useDiscordProfile(): UseDiscordProfileResult {
    */
   const saveToCache = (username: string, profileData: DiscordProfile): void => {
     try {
-      const cacheKey = `${STORAGE_KEYS.cachePrefix}${username.toLowerCase()}`;
+      const cacheKey = `${CACHE.STORAGE_KEYS.cachePrefix}${username.toLowerCase()}`;
       localStorage.setItem(cacheKey, JSON.stringify(profileData));
     } catch (err) {
       console.error('Failed to save to cache:', err);
@@ -141,7 +142,7 @@ export function useDiscordProfile(): UseDiscordProfileResult {
       return;
     }
     
-    // Set loading state
+    // Set loading state and reset error
     setLoading(true);
     setError(null);
     setCurrentUsername(username);
@@ -153,6 +154,17 @@ export function useDiscordProfile(): UseDiscordProfileResult {
       if (cachedProfile) {
         console.log('Using cached profile for', username);
         setProfile(cachedProfile);
+        
+        // If cache is more than 10 minutes old, refresh in background
+        const cacheAge = Date.now() - cachedProfile.timestamp;
+        if (cacheAge > 10 * 60 * 1000) {
+          console.log('Cache is stale, refreshing in background');
+          // Continue showing the cached data while fetching updated data
+          setTimeout(() => {
+            refreshProfileSilently(username);
+          }, 100);
+        }
+        
         setLoading(false);
         return;
       }
@@ -176,6 +188,33 @@ export function useDiscordProfile(): UseDiscordProfileResult {
       setError(err instanceof Error ? err.message : 'An unknown error occurred');
     } finally {
       setLoading(false);
+    }
+  };
+
+  /**
+   * Silently refresh profile data without showing loading state
+   * Used for background refreshes
+   */
+  const refreshProfileSilently = async (username: string): Promise<void> => {
+    try {
+      const data = await discordApi.fetchProfile(username);
+      
+      // Add timestamp for cache expiration
+      const profileWithTimestamp: DiscordProfile = {
+        ...data,
+        timestamp: Date.now()
+      };
+      
+      // Update state and storage
+      saveToCache(username, profileWithTimestamp);
+      
+      // Only update state if this is still the current profile
+      if (currentUsername.toLowerCase() === username.toLowerCase()) {
+        setProfile(profileWithTimestamp);
+      }
+    } catch (err) {
+      console.error('Error in background refresh:', err);
+      // Don't update error state for background refreshes
     }
   };
 

@@ -1,4 +1,4 @@
-import { useRef, useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { RefreshCcw, User, Calendar, Clock } from 'lucide-react';
 import { Button } from '../ui/button';
 import { Card, CardContent } from '../ui/card';
@@ -31,40 +31,33 @@ interface ProfileCardProps {
   isRefreshing: boolean;
 }
 
+// Function to calculate relative time
+const getRelativeTime = (timestamp: number): string => {
+  const msAgo = Date.now() - timestamp;
+  const secondsAgo = Math.floor(msAgo / 1000);
+  
+  if (secondsAgo < 60) {
+    return `${secondsAgo} second${secondsAgo === 1 ? '' : 's'} ago`;
+  } else if (secondsAgo < 3600) {
+    const minutesAgo = Math.floor(secondsAgo / 60);
+    return `${minutesAgo} minute${minutesAgo === 1 ? '' : 's'} ago`;
+  } else {
+    const hoursAgo = Math.floor(secondsAgo / 3600);
+    return `${hoursAgo} hour${hoursAgo === 1 ? '' : 's'} ago`;
+  }
+};
+
 /**
  * Component to display Discord profile information
  */
 export function ProfileCard({ profile, onRefresh, isRefreshing }: ProfileCardProps) {
-  const [age, setAge] = useState<string>('');
-  const timerId = useRef<number | null>(null);
+  const [relativeTime, setRelativeTime] = useState<string>('');
   
-  // Calculate how long ago the profile was fetched
-  const updateAge = () => {
-    if (!profile.timestamp) return;
-    
-    const msAgo = Date.now() - profile.timestamp;
-    const secondsAgo = Math.floor(msAgo / 1000);
-    
-    if (secondsAgo < 60) {
-      setAge(`${secondsAgo} second${secondsAgo === 1 ? '' : 's'} ago`);
-    } else if (secondsAgo < 3600) {
-      const minutesAgo = Math.floor(secondsAgo / 60);
-      setAge(`${minutesAgo} minute${minutesAgo === 1 ? '' : 's'} ago`);
-    } else {
-      const hoursAgo = Math.floor(secondsAgo / 3600);
-      setAge(`${hoursAgo} hour${hoursAgo === 1 ? '' : 's'} ago`);
-    }
-  };
-  
-  // Update the age display every second
+  // Calculate relative time only when profile timestamp changes
   useEffect(() => {
-    updateAge();
-    
-    timerId.current = window.setInterval(updateAge, 1000);
-    
-    return () => {
-      if (timerId.current) window.clearInterval(timerId.current);
-    };
+    if (profile.timestamp) {
+      setRelativeTime(getRelativeTime(profile.timestamp));
+    }
   }, [profile.timestamp]);
   
   // Format activity display
@@ -127,7 +120,7 @@ export function ProfileCard({ profile, onRefresh, isRefreshing }: ProfileCardPro
               {/* Last Updated */}
               <div className="flex items-center text-sm text-gray-500 mt-4">
                 <Clock className="h-4 w-4 mr-1" />
-                <span>Updated: {age}</span>
+                <span>Updated: {relativeTime}</span>
                 <Button 
                   onClick={onRefresh} 
                   variant="ghost" 

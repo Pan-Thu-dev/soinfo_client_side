@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { ClockIcon, TrashIcon, UserIcon } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
@@ -11,6 +11,7 @@ interface HistoryItem {
   displayName: string;
   avatarUrl: string | null;
   timestamp: number;
+  formattedDate?: string; // Add formatted date to store pre-calculated value
 }
 
 interface RecentSearchesProps {
@@ -19,6 +20,24 @@ interface RecentSearchesProps {
 
 // LocalStorage key for search history
 const HISTORY_STORAGE_KEY = 'discordSearchHistory';
+
+/**
+ * Format date for display
+ */
+const formatDate = (timestamp: number): string => {
+  try {
+    const date = new Date(timestamp);
+    return date.toLocaleDateString(undefined, { 
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  } catch {
+    return 'Unknown date';
+  }
+};
 
 /**
  * Component to display recent Discord profile searches
@@ -39,7 +58,14 @@ export function RecentSearches({ onSelectSearch }: RecentSearchesProps) {
       const historyString = localStorage.getItem(HISTORY_STORAGE_KEY);
       if (historyString) {
         const parsedHistory = JSON.parse(historyString);
-        setHistory(Array.isArray(parsedHistory) ? parsedHistory : []);
+        // Pre-calculate formatted dates during load
+        const historyWithDates = Array.isArray(parsedHistory) 
+          ? parsedHistory.map(item => ({
+              ...item,
+              formattedDate: formatDate(item.timestamp)
+            }))
+          : [];
+        setHistory(historyWithDates);
       }
     } catch (err) {
       console.error('Failed to load search history:', err);
@@ -57,24 +83,6 @@ export function RecentSearches({ onSelectSearch }: RecentSearchesProps) {
       setHistory([]);
     } catch (err) {
       console.error('Failed to clear search history:', err);
-    }
-  };
-
-  /**
-   * Format date for display
-   */
-  const formatDate = (timestamp: number): string => {
-    try {
-      const date = new Date(timestamp);
-      return date.toLocaleDateString(undefined, { 
-        year: 'numeric',
-        month: 'short',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit'
-      });
-    } catch {
-      return 'Unknown date';
     }
   };
 
@@ -148,7 +156,7 @@ export function RecentSearches({ onSelectSearch }: RecentSearchesProps) {
                 dateTime={new Date(item.timestamp).toISOString()}
                 className="text-xs text-gray-400 whitespace-nowrap ml-2"
               >
-                {formatDate(item.timestamp)}
+                {item.formattedDate || formatDate(item.timestamp)}
               </time>
             </li>
           ))}
