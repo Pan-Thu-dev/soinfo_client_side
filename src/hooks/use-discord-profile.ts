@@ -1,20 +1,8 @@
 import { useState } from 'react';
-import discordApi from '../api/discord';
-
-// Import the type from our API module
-import type { DiscordActivity } from '../api/discord';
-
-/**
- * Profile data type definition
- */
-export interface DiscordProfile {
-  username: string;
-  displayName: string;
-  avatarUrl: string | null;
-  status: string;
-  activity: DiscordActivity | null;
-  timestamp: number; // Added for caching purposes
-}
+import { toast } from 'react-hot-toast';
+import discordApi from '../api/discord-api';
+import { CACHE } from '../lib/constants';
+import type { DiscordProfile, DiscordActivity, HistoryItem } from '../types/discord-types';
 
 /**
  * Hook return type definition
@@ -25,28 +13,38 @@ interface UseDiscordProfileResult {
   error: string | null;
   fetchProfile: (username: string) => Promise<void>;
   refreshProfile: () => Promise<void>;
+  lastFetchFailed: boolean;
 }
 
 /**
- * History item definition
+ * Generate cache key for a username
  */
-interface HistoryItem {
-  username: string;
-  displayName: string;
-  avatarUrl: string | null;
-  timestamp: number;
-}
+const getCacheKey = (username: string): string => {
+  return `${CACHE.STORAGE_KEYS.cachePrefix}${username.toLowerCase()}`;
+};
 
-// Cache constants
-const CACHE = {
-  // Cache expiration time (30 minutes in milliseconds)
-  EXPIRATION: 30 * 60 * 1000,
-  // Maximum number of history items to store
-  MAX_HISTORY_ITEMS: 10,
-  // LocalStorage keys
-  STORAGE_KEYS: {
-    history: 'discordSearchHistory',
-    cachePrefix: 'discord_profile_'
+/**
+ * Clear all Discord profile cache items from localStorage
+ */
+export const clearProfileCache = (): void => {
+  try {
+    let clearedCount = 0;
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && key.startsWith(CACHE.STORAGE_KEYS.cachePrefix)) {
+        localStorage.removeItem(key);
+        clearedCount++;
+      }
+    }
+    
+    if (clearedCount > 0) {
+      toast.success(`Cleared ${clearedCount} cached profile${clearedCount !== 1 ? 's' : ''}.`);
+    } else {
+      toast.success('No profile cache found to clear.');
+    }
+  } catch (err) {
+    console.error('Failed to clear profile cache:', err);
+    toast.error('Could not clear profile cache.');
   }
 };
 
@@ -58,6 +56,7 @@ export function useDiscordProfile(): UseDiscordProfileResult {
   const [currentUsername, setCurrentUsername] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+  const [lastFetchFailed, setLastFetchFailed] = useState<boolean>(false);
 
   /**
    * Add profile to search history
@@ -100,7 +99,7 @@ export function useDiscordProfile(): UseDiscordProfileResult {
    */
   const checkCache = (username: string): DiscordProfile | null => {
     try {
-      const cacheKey = `${CACHE.STORAGE_KEYS.cachePrefix}${username.toLowerCase()}`;
+      const cacheKey = getCacheKey(username);
       const cacheString = localStorage.getItem(cacheKey);
       if (!cacheString) return null;
       
@@ -125,10 +124,28 @@ export function useDiscordProfile(): UseDiscordProfileResult {
    */
   const saveToCache = (username: string, profileData: DiscordProfile): void => {
     try {
-      const cacheKey = `${CACHE.STORAGE_KEYS.cachePrefix}${username.toLowerCase()}`;
+      const cacheKey = getCacheKey(username);
       localStorage.setItem(cacheKey, JSON.stringify(profileData));
     } catch (err) {
       console.error('Failed to save to cache:', err);
+    }
+  };
+
+  /**
+   * Handle common error logic
+   */
+  const handleError = (err: unknown, action: string): void => {
+    console.error(`Error ${action}:`, err);
+    setLastFetchFailed(true);
+    
+    const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
+    setError(errorMessage);
+    
+    // Check for rate limiting errors
+    if (err instanceof Error && err.message.includes('rate limit')) {
+      toast.error('Rate limit exceeded. Please try again later.');
+    } else {
+      toast.error(errorMessage);
     }
   };
 
@@ -139,12 +156,14 @@ export function useDiscordProfile(): UseDiscordProfileResult {
     // Validate input
     if (!username.trim()) {
       setError('Please enter a Discord username');
+      toast.error('Please enter a Discord username');
       return;
     }
     
     // Set loading state and reset error
     setLoading(true);
     setError(null);
+    setLastFetchFailed(false);
     setCurrentUsername(username);
     
     try {
@@ -157,7 +176,7 @@ export function useDiscordProfile(): UseDiscordProfileResult {
         
         // If cache is more than 10 minutes old, refresh in background
         const cacheAge = Date.now() - cachedProfile.timestamp;
-        if (cacheAge > 10 * 60 * 1000) {
+        if (cacheAge > CACHE.STALE_THRESHOLD) {
           console.log('Cache is stale, refreshing in background');
           // Continue showing the cached data while fetching updated data
           setTimeout(() => {
@@ -184,8 +203,7 @@ export function useDiscordProfile(): UseDiscordProfileResult {
       addToHistory(username, profileWithTimestamp);
       setProfile(profileWithTimestamp);
     } catch (err) {
-      console.error('Error fetching profile:', err);
-      setError(err instanceof Error ? err.message : 'An unknown error occurred');
+      handleError(err, 'fetching profile');
     } finally {
       setLoading(false);
     }
@@ -224,11 +242,13 @@ export function useDiscordProfile(): UseDiscordProfileResult {
   const refreshProfile = async (): Promise<void> => {
     if (!currentUsername) {
       setError('No profile to refresh');
+      toast.error('No profile to refresh');
       return;
     }
     
     setLoading(true);
     setError(null);
+    setLastFetchFailed(false);
     
     try {
       // Force fetch from API
@@ -245,13 +265,13 @@ export function useDiscordProfile(): UseDiscordProfileResult {
       saveToCache(currentUsername, profileWithTimestamp);
       addToHistory(currentUsername, profileWithTimestamp);
       setProfile(profileWithTimestamp);
+      toast.success('Profile refreshed successfully');
     } catch (err) {
-      console.error('Error refreshing profile:', err);
-      setError(err instanceof Error ? err.message : 'An unknown error occurred');
+      handleError(err, 'refreshing profile');
     } finally {
       setLoading(false);
     }
   };
 
-  return { profile, loading, error, fetchProfile, refreshProfile };
+  return { profile, loading, error, fetchProfile, refreshProfile, lastFetchFailed };
 } 

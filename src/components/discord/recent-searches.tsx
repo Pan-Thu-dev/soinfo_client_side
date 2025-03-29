@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { ClockIcon, TrashIcon, UserIcon } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
+import { formatDate } from '../../lib/date';
 
 /**
  * Search history item structure
@@ -20,24 +21,6 @@ interface RecentSearchesProps {
 
 // LocalStorage key for search history
 const HISTORY_STORAGE_KEY = 'discordSearchHistory';
-
-/**
- * Format date for display
- */
-const formatDate = (timestamp: number): string => {
-  try {
-    const date = new Date(timestamp);
-    return date.toLocaleDateString(undefined, { 
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
-  } catch {
-    return 'Unknown date';
-  }
-};
 
 /**
  * Component to display recent Discord profile searches

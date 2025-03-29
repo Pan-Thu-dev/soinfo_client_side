@@ -2,9 +2,10 @@ import { useState, useEffect } from 'react';
 import { RefreshCcw, User, Calendar, Clock } from 'lucide-react';
 import { Button } from '../ui/button';
 import { Card, CardContent } from '../ui/card';
+import { formatRelativeTime } from '../../lib/date';
 
-// Import our updated profile type
-import { DiscordProfile } from '../../hooks/use-discord-profile';
+// Import profile type from types
+import { DiscordProfile } from '../../types/discord-types';
 
 // Map status to color
 const statusColors: Record<string, string> = {
@@ -31,22 +32,6 @@ interface ProfileCardProps {
   isRefreshing: boolean;
 }
 
-// Function to calculate relative time
-const getRelativeTime = (timestamp: number): string => {
-  const msAgo = Date.now() - timestamp;
-  const secondsAgo = Math.floor(msAgo / 1000);
-  
-  if (secondsAgo < 60) {
-    return `${secondsAgo} second${secondsAgo === 1 ? '' : 's'} ago`;
-  } else if (secondsAgo < 3600) {
-    const minutesAgo = Math.floor(secondsAgo / 60);
-    return `${minutesAgo} minute${minutesAgo === 1 ? '' : 's'} ago`;
-  } else {
-    const hoursAgo = Math.floor(secondsAgo / 3600);
-    return `${hoursAgo} hour${hoursAgo === 1 ? '' : 's'} ago`;
-  }
-};
-
 /**
  * Component to display Discord profile information
  */
@@ -56,7 +41,7 @@ export function ProfileCard({ profile, onRefresh, isRefreshing }: ProfileCardPro
   // Calculate relative time only when profile timestamp changes
   useEffect(() => {
     if (profile.timestamp) {
-      setRelativeTime(getRelativeTime(profile.timestamp));
+      setRelativeTime(formatRelativeTime(profile.timestamp));
     }
   }, [profile.timestamp]);
   
