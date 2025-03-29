@@ -42,6 +42,11 @@ export function DiscordSearch({ onSearch, loading, error }: DiscordSearchProps) 
     if (validationError) {
       setValidationError(null);
     }
+    
+    // Provide real-time validation feedback after at least 2 characters
+    if (value.length >= 2 && !isValidUsername(value)) {
+      setValidationError('Username should only include letters, numbers, underscores, and periods');
+    }
   };
 
   /**
@@ -85,10 +90,10 @@ export function DiscordSearch({ onSearch, loading, error }: DiscordSearchProps) 
                 placeholder="username"
                 value={username}
                 onChange={handleUsernameChange}
-                className={`flex-1 ${validationError || error ? 'border-red-500 focus:ring-red-500' : 'focus:ring-[hsl(var(--discord-blurple))] focus:border-[hsl(var(--discord-blurple))]'}`}
+                className={`flex-1 ${validationError ? 'border-red-500 focus:ring-red-500' : 'focus:ring-[hsl(var(--discord-blurple))] focus:border-[hsl(var(--discord-blurple))]'}`}
                 disabled={loading}
-                aria-invalid={Boolean(validationError || error)}
-                aria-describedby={validationError || error ? "username-error" : undefined}
+                aria-invalid={Boolean(validationError)}
+                aria-describedby={validationError ? "username-error" : undefined}
                 autoComplete="off"
               />
               <Button 
@@ -107,10 +112,10 @@ export function DiscordSearch({ onSearch, loading, error }: DiscordSearchProps) 
             </div>
           </div>
           
-          {(validationError || error) && (
+          {validationError && (
             <div id="username-error" className="text-red-500 text-sm mt-2 flex items-start" role="alert">
               <AlertCircleIcon className="h-4 w-4 mr-1 mt-0.5 flex-shrink-0" aria-hidden="true" />
-              <span>{validationError || error}</span>
+              <span>{validationError}</span>
             </div>
           )}
           
